@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Euro-Rial-Toman Live Price Dataset</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>Euro-Rial-Toman Live Price Dataset</h1>
+            <p class="subtitle">Historical and live EUR to IRR/IRT exchange rates from 2011 to present</p>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="stat-number" id="totalRecords">Loading...</span>
+                    <span class="stat-label">Total Records</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number" id="lastUpdate">Loading...</span>
+                    <span class="stat-label">Last Update</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number" id="currentPrice">Loading...</span>
+                    <span class="stat-label">Latest Close Price (Rial)</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number" id="dataRange">2011–Present</span>
+                    <span class="stat-label">Data Range</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Chart Section -->
+        <section class="chart-section">
+            <div class="chart-header">
+                <h2>Interactive Price Chart</h2>
+                <div class="chart-controls">
+                    <button class="chart-btn active" data-type="candlestick">Candlestick</button>
+                    <button class="chart-btn" data-type="line">Line Chart</button>
+                    <button class="chart-btn" data-type="area">Area Chart</button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <div id="chart" class="chart"></div>
+                <div class="chart-loading" id="chartLoading">
+                    <div class="spinner"></div>
+                    <p>Loading chart data...</p>
+                </div>
+            </div>
+            
+            <!-- Separate Indicator Windows -->
+            <div class="indicator-windows">
+                <!-- RSI Window -->
+                <div class="indicator-window" id="rsiWindow" style="display: none;">
+                    <div class="indicator-header">
+                        <span class="indicator-title">RSI (14)</span>
+                        <span class="indicator-value" id="rsiValue">--</span>
+                    </div>
+                    <div id="rsiChart" class="indicator-chart"></div>
+                </div>
+                
+                <!-- Stochastic Window -->
+                <div class="indicator-window" id="stochasticWindow" style="display: none;">
+                    <div class="indicator-header">
+                        <span class="indicator-title">Stochastic (14,3,3)</span>
+                        <span class="indicator-value" id="stochasticValue">--</span>
+                    </div>
+                    <div id="stochasticChart" class="indicator-chart"></div>
+                </div>
+                
+                <!-- Momentum Window -->
+                <div class="indicator-window" id="momentumWindow" style="display: none;">
+                    <div class="indicator-header">
+                        <span class="indicator-title">Momentum (10)</span>
+                        <span class="indicator-value" id="momentumValue">--</span>
+                    </div>
+                    <div id="momentumChart" class="indicator-chart"></div>
+                </div>
+                
+                <!-- MACD Window -->
+                <div class="indicator-window" id="macdWindow" style="display: none;">
+                    <div class="indicator-header">
+                        <span class="indicator-title">MACD (12,26,9)</span>
+                        <span class="indicator-value" id="macdValue">--</span>
+                    </div>
+                    <div id="macdChart" class="indicator-chart"></div>
+                </div>
+            </div>
+            
+            <!-- Indicator Controls -->
+            <div class="indicator-controls">
+                <h3>Technical Indicators</h3>
+                <div class="indicator-buttons">
+                    <button class="indicator-btn" data-indicator="rsi">RSI</button>
+                    <button class="indicator-btn" data-indicator="stochastic">Stochastic</button>
+                    <button class="indicator-btn" data-indicator="momentum">Momentum</button>
+                    <button class="indicator-btn" data-indicator="macd">MACD</button>
+                    <button class="indicator-btn" data-indicator="ichimoku">Ichimoku</button>
+                    <button class="indicator-btn" data-indicator="ema">EMA</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recent Data Section -->
+        <section class="data-section">
+            <h2>Recent Exchange Rates</h2>
+            <div class="table-container">
+                <table class="data-table" id="recentDataTable">
+                    <thead>
+                        <tr>
+                            <th>Gregorian Date</th>
+                            <th>Persian Date</th>
+                            <th>Open Price</th>
+                            <th>Low Price</th>
+                            <th>High Price</th>
+                            <th>Close Price</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recentDataBody">
+                        <tr><td colspan="6" class="loading">Loading recent data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Technical Analysis Section -->
+        <section class="technical-analysis-section">
+            <div class="ta-header">
+                <h2>Technical Analysis</h2>
+                <div class="timeframe-controls">
+                    <button class="timeframe-btn" data-timeframe="day">1 Day</button>
+                    <button class="timeframe-btn active" data-timeframe="week">1 Week</button>
+                    <button class="timeframe-btn" data-timeframe="month">1 Month</button>
+                </div>
+            </div>
+            
+            <div class="indicators-grid">
+                <!-- Moving Average Indicator -->
+                <div class="indicator-card">
+                    <h3>Moving Average (MA)</h3>
+                    <div class="speedometer-container">
+                        <canvas id="maSpeedometer" width="200" height="150"></canvas>
+                        <div class="indicator-signal" id="maSignal">-</div>
+                    </div>
+                </div>
+
+                <!-- RSI Indicator -->
+                <div class="indicator-card">
+                    <h3>Relative Strength Index</h3>
+                    <div class="speedometer-container">
+                        <canvas id="rsiSpeedometer" width="200" height="150"></canvas>
+                        <div class="indicator-signal" id="rsiSignal">-</div>
+                    </div>
+                </div>
+
+                <!-- MACD Indicator -->
+                <div class="indicator-card">
+                    <h3>MA Convergence Divergence</h3>
+                    <div class="speedometer-container">
+                        <canvas id="macdSpeedometer" width="200" height="150"></canvas>
+                        <div class="indicator-signal" id="macdSignal">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ta-summary">
+                <!-- Oscillators and Moving Averages Summary -->
+                <div class="indicators-summary">
+                    <div class="summary-grid">
+                        <!-- Oscillators Section -->
+                        <div class="summary-section">
+                            <h3>Oscillators</h3>
+                            <div class="summary-signal" id="oscillatorsSignal">
+                                <span class="signal-text">NEUTRAL</span>
+                                <div class="signal-count" id="oscillatorsCount">0 Buy, 0 Sell, 0 Neutral</div>
+                            </div>
+                            <div class="indicators-list" id="oscillatorsList">
+                                <!-- Oscillators will be populated here -->
+                            </div>
+                            <button class="show-more-btn" id="showMoreOscillators" style="display: none;">Show More</button>
+                        </div>
+
+                        <!-- Moving Averages Section -->
+                        <div class="summary-section">
+                            <h3>Moving Averages</h3>
+                            <div class="summary-signal" id="movingAveragesSignal">
+                                <span class="signal-text">NEUTRAL</span>
+                                <div class="signal-count" id="movingAveragesCount">0 Buy, 0 Sell, 0 Neutral</div>
+                            </div>
+                            <div class="indicators-list" id="movingAveragesList">
+                                <!-- Moving averages will be populated here -->
+                            </div>
+                            <button class="show-more-btn" id="showMoreMA" style="display: none;">Show More</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overall-signal">
+                    <h3>Overall </h3>
+                    <div class="signal-indicator" id="overallSignal">
+                        <span class="signal-text">Calculating...</span>
+                        <div class="signal-strength" id="signalStrength"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dataset Info Section -->
+        <section class="info-section">
+            <div class="info-grid">
+                <div class="info-card">
+                    <h3>About This Dataset</h3>
+                    <p>This dataset provides comprehensive historical exchange rate data for Eueo to Iranian Rial (IRR) from 2011 to the present day.</p>
+                    <ul>
+                        <li><strong>Source:</strong> TGJU.org (Tehran Gold and Jewelry Union)</li>
+                        <li><strong>Update Frequency:</strong> Daily via automated scraping</li>
+                        <li><strong>Data Points:</strong> Open, Low, High, Close prices, Change Amount, Change Percent, Dates</li>
+                        <li><strong>Currency:</strong> Rial (IRR)</li>
+                    </ul>
+                </div>
+
+                <div class="info-card">
+                    <h3>Data Access</h3>
+                    <div class="download-links">
+                        <a href="https://raw.githubusercontent.com/kooroshkz/Euro-Rial-Toman-Live-Price-Dataset/refs/heads/main/data/Euro_Rial_Price_Dataset.csv" 
+                           class="download-btn" target="_blank">
+                            Download Dataset (CSV)
+                        </a>
+                        <a href="https://github.com/kooroshkz/Euro-Rial-Toman-Live-Price-Dataset" 
+                           class="download-btn primary" target="_blank">
+                            View on GitHub
+                        </a>
+                    </div>
+                </div>
+
+                <div class="info-card">
+                    <h3>Technical Details</h3>
+                    <ul>
+                        <li><strong>Format:</strong> CSV with UTF-8 encoding</li>
+                        <li><strong>Date Format:</strong> YYYY/MM/DD (Gregorian and Persian)</li>
+                        <li><strong>Automation:</strong> GitHub Actions daily updates</li>
+                        <li><strong>License:</strong> MIT</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-content">
+                <p>
+                    Dataset maintained by <a href="https://github.com/kooroshkz" target="_blank">Koorosh Komeili Zadeh</a> 
+                    | Auto-updated daily 
+                    | Charts powered by <a href="https://www.tradingview.com" target="_blank">TradingView Lightweight Charts</a>
+                </p>
+            </div>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+    <script src="ta.js"></script>
+</body>
+</html>

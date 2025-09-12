@@ -1,0 +1,254 @@
+name: Daily EUR/IRR Exchange Rate Update
+
+on:
+  schedule:
+    # Run daily at 8:00 AM UTC (every day of the week)
+    - cron: '0 8 * * *'
+  workflow_dispatch: # Allow manual triggering
+    inputs:
+      force_update:
+        description: 'Force full update instead of incremental'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  update-exchange-rates:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0  # Fetch full history for proper git operations
+        
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget gnupg unzip xvfb
+        
+    - name: Install Chrome Browser
+      run: |
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+        
+    - name: Verify Chrome installation
+      run: |
+        google-chrome --version
+        which google-chrome
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Check current dataset status
+      run: |
+        echo "=== Current Dataset Status ===" 
+        if [ -f "data/Euro_Rial_Price_Dataset.csv" ]; then
+          TOTAL_RECORDS=$(tail -n +2 data/Euro_Rial_Price_Dataset.csv | wc -l)
+          LATEST_DATE=$(head -n 2 data/Euro_Rial_Price_Dataset.csv | tail -n 1 | cut -d',' -f7)
+          echo "Total records: $TOTAL_RECORDS"
+          echo "Latest date: $LATEST_DATE"
+          echo "EXISTING_RECORDS=$TOTAL_RECORDS" >> $GITHUB_ENV
+          echo "LATEST_DATE=$LATEST_DATE" >> $GITHUB_ENV
+        else
+          echo "No existing dataset found - will perform full scrape"
+          echo "EXISTING_RECORDS=0" >> $GITHUB_ENV
+          echo "LATEST_DATE=none" >> $GITHUB_ENV
+        fi
+        
+    - name: Run EUR/IRR scraper (incremental update)
+      run: |
+        echo "=== Starting EUR/IRR Exchange Rate Scraper ===" 
+        echo "Running incremental update to check for new records..."
+        
+        # Set display for headless Chrome
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+        
+        # Run the scraper
+        python3 main.py
+        
+    - name: Check for new data
+      id: check-changes
+      run: |
+        echo "=== Checking for Changes ===" 
+        
+        # Check if CSV file exists and has content
+        if [ -f "data/Euro_Rial_Price_Dataset.csv" ]; then
+          NEW_RECORDS=$(tail -n +2 data/Euro_Rial_Price_Dataset.csv | wc -l)
+          NEW_LATEST_DATE=$(head -n 2 data/Euro_Rial_Price_Dataset.csv | tail -n 1 | cut -d',' -f7)
+          
+          echo "Previous records: $EXISTING_RECORDS"
+          echo "New records: $NEW_RECORDS"
+          echo "Previous latest date: $LATEST_DATE"  
+          echo "New latest date: $NEW_LATEST_DATE"
+          
+          if [ "$NEW_RECORDS" -gt "$EXISTING_RECORDS" ] || [ "$NEW_LATEST_DATE" != "$LATEST_DATE" ]; then
+            echo "New data detected!"
+            echo "CHANGES_DETECTED=true" >> $GITHUB_OUTPUT
+            echo "NEW_RECORD_COUNT=$NEW_RECORDS" >> $GITHUB_OUTPUT
+            echo "ADDED_RECORDS=$((NEW_RECORDS - EXISTING_RECORDS))" >> $GITHUB_OUTPUT
+            echo "LATEST_ENTRY_DATE=$NEW_LATEST_DATE" >> $GITHUB_OUTPUT
+          else
+            echo "No new data found"
+            echo "CHANGES_DETECTED=false" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "Error: CSV file not found after scraping"
+          exit 1
+        fi
+        
+    - name: Commit and push changes
+      if: steps.check-changes.outputs.CHANGES_DETECTED == 'true'
+      env:
+        COMMIT_USER_NAME: ${{ secrets.COMMIT_USER_NAME }}
+        COMMIT_USER_EMAIL: ${{ secrets.COMMIT_USER_EMAIL }}
+        PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+      run: |
+        echo "=== Committing New Data ==="
+
+        # If commit name/email are provided via secrets, use them; otherwise use action identity
+        if [ -n "$COMMIT_USER_NAME" ] && [ -n "$COMMIT_USER_EMAIL" ]; then
+          git config --local user.name "$COMMIT_USER_NAME"
+          git config --local user.email "$COMMIT_USER_EMAIL"
+        else
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+        fi
+
+        # Ensure author/committer env vars match the configured git identity
+        export GIT_AUTHOR_NAME="$(git config user.name)"
+        export GIT_AUTHOR_EMAIL="$(git config user.email)"
+        export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+        export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+
+        # Add the updated CSV file
+        git add data/Euro_Rial_Price_Dataset.csv
+
+        # Create commit message with details
+        COMMIT_MSG="Daily dataset update - $(date +'%Y-%m-%d')
+
+        Added ${{ steps.check-changes.outputs.ADDED_RECORDS }} new records
+        Latest entry: ${{ steps.check-changes.outputs.LATEST_ENTRY_DATE }}
+        Total records: ${{ steps.check-changes.outputs.NEW_RECORD_COUNT }}
+
+        Auto-updated by GitHub Actions"
+
+        git commit -m "$COMMIT_MSG"
+
+        # If a personal access token is provided via secrets, use it to push so the commit is attributed to the token owner
+        if [ -n "$PERSONAL_ACCESS_TOKEN" ]; then
+          echo "Using personal access token to push as ${GIT_AUTHOR_NAME} <${GIT_AUTHOR_EMAIL}>"
+          git remote set-url origin https://x-access-token:$PERSONAL_ACCESS_TOKEN@github.com/${{ github.repository }}.git
+        fi
+
+        git push
+        
+    - name: Update Kaggle Dataset
+      if: steps.check-changes.outputs.CHANGES_DETECTED == 'true'
+      env:
+        KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+        KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        LATEST_ENTRY_DATE: ${{ steps.check-changes.outputs.LATEST_ENTRY_DATE }}
+      run: |
+        echo "=== Updating Kaggle Dataset ==="
+        if [ -n "$KAGGLE_USERNAME" ] && [ -n "$KAGGLE_KEY" ]; then
+          python3 scripts/update_kaggle.py
+        else
+          echo "⚠️ Kaggle credentials not found in secrets. Skipping Kaggle update."
+          echo "To enable Kaggle updates, add KAGGLE_USERNAME and KAGGLE_KEY to repository secrets."
+        fi
+
+    - name: Commit run log when no new data
+      if: steps.check-changes.outputs.CHANGES_DETECTED != 'true'
+      env:
+        COMMIT_USER_NAME: ${{ secrets.COMMIT_USER_NAME }}
+        COMMIT_USER_EMAIL: ${{ secrets.COMMIT_USER_EMAIL }}
+        PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+      run: |
+        echo "=== Writing run log (no new data) ==="
+        mkdir -p logs
+        echo "$(date -u +'%Y-%m-%d %H:%M:%S') UTC - No new data. Total records: $EXISTING_RECORDS" >> logs/update.log
+
+        # Configure git identity
+        if [ -n "$COMMIT_USER_NAME" ] && [ -n "$COMMIT_USER_EMAIL" ]; then
+          git config --local user.name "$COMMIT_USER_NAME"
+          git config --local user.email "$COMMIT_USER_EMAIL"
+        else
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+        fi
+
+        export GIT_AUTHOR_NAME="$(git config user.name)"
+        export GIT_AUTHOR_EMAIL="$(git config user.email)"
+        export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+        export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+
+        git add logs/update.log
+
+        # Only commit if the log actually changed (avoid empty commits)
+        if ! git diff --cached --quiet; then
+          COMMIT_MSG="Chore: daily run (no new data) - $(date -u +'%Y-%m-%d')"
+          git commit -m "$COMMIT_MSG"
+
+          if [ -n "$PERSONAL_ACCESS_TOKEN" ]; then
+            git remote set-url origin https://x-access-token:$PERSONAL_ACCESS_TOKEN@github.com/${{ github.repository }}.git
+          fi
+
+          git push
+        else
+          echo "No change to logs/update.log; skipping commit."
+        fi
+        
+    - name: Create update summary
+      run: |
+        echo "## Daily EUR/IRR Exchange Rate Update" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Date**: $(date +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+        echo "**Status**: Update completed successfully" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.check-changes.outputs.CHANGES_DETECTED }}" == "true" ]; then
+          echo "### New Data Found!" >> $GITHUB_STEP_SUMMARY
+          echo "- **Records Added**: ${{ steps.check-changes.outputs.ADDED_RECORDS }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total Records**: ${{ steps.check-changes.outputs.NEW_RECORD_COUNT }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Latest Entry**: ${{ steps.check-changes.outputs.LATEST_ENTRY_DATE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Data Source**: [tgju.org](https://www.tgju.org/profile/price_eur/history)" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ secrets.KAGGLE_USERNAME }}" ]; then
+            echo "- **Kaggle**: Dataset updated ✅" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Kaggle**: Update skipped (credentials not configured)" >> $GITHUB_STEP_SUMMARY
+          fi
+        else
+          echo "### No New Data" >> $GITHUB_STEP_SUMMARY
+          echo "No new exchange rate records were found since the last update." >> $GITHUB_STEP_SUMMARY
+          echo "The dataset remains current with **$EXISTING_RECORDS** total records." >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Dataset Information" >> $GITHUB_STEP_SUMMARY
+        echo "- **File**: \`data/Euro_Rial_Price_Dataset.csv\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Format**: Open, Low, High, Close prices (integers)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Date Range**: 2011-11-26 to $(date +'%Y-%m-%d')" >> $GITHUB_STEP_SUMMARY
+        echo "- **Update Schedule**: Daily at 8:00 AM UTC (except Fridays)" >> $GITHUB_STEP_SUMMARY
+        
+    - name: Upload logs as artifact (on failure)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: scraper-logs-${{ github.run_number }}
+        path: |
+          scraper.log
+          *.log
+        retention-days: 7
